@@ -4,7 +4,7 @@
 #include <ros/ros.h>
 #include <image_transport/image_transport.h>
 
-#include <AprilTags/TagDetector.h>
+#include <apriltag/apriltag.h>
 #include <tf/transform_broadcaster.h>
 
 namespace apriltags_ros{
@@ -40,7 +40,7 @@ class AprilTagDetector{
   ros::Publisher detections_pub_;
   ros::Publisher pose_pub_;
   tf::TransformBroadcaster tf_pub_;
-  boost::shared_ptr<AprilTags::TagDetector> tag_detector_;
+  apriltag_detector_t *tag_detector_;
   bool projected_optics_;
 };
 

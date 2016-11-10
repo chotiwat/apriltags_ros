@@ -6,12 +6,15 @@
 #include <geometry_msgs/PoseArray.h>
 #include <apriltags_ros/AprilTagDetection.h>
 #include <apriltags_ros/AprilTagDetectionArray.h>
-#include <AprilTags/Tag16h5.h>
-#include <AprilTags/Tag25h7.h>
-#include <AprilTags/Tag25h9.h>
-#include <AprilTags/Tag36h9.h>
-#include <AprilTags/Tag36h11.h>
 #include <XmlRpcException.h>
+
+#include <apriltag/tag16h5.h>
+#include <apriltag/tag25h7.h>
+#include <apriltag/tag25h9.h>
+#include <apriltag/tag36h10.h>
+#include <apriltag/tag36h11.h>
+
+#include <AprilTags/TagDetection.h>
 
 namespace apriltags_ros{
 
@@ -32,33 +35,40 @@ AprilTagDetector::AprilTagDetector(ros::NodeHandle& nh, ros::NodeHandle& pnh): i
     sensor_frame_id_ = "";
   }
 
-  std::string tag_family;
-  pnh.param<std::string>("tag_family", tag_family, "36h11");
+  std::string tag_family_name;
+  pnh.param<std::string>("tag_family", tag_family_name, "36h11");
 
   pnh.param<bool>("projected_optics", projected_optics_, false);
 
-  const AprilTags::TagCodes* tag_codes;
-  if(tag_family == "16h5"){
-    tag_codes = &AprilTags::tagCodes16h5;
+  apriltag_family_t *tag_family = NULL;
+  if(tag_family_name == "16h5"){
+    tag_family = tag16h5_create();
   }
-  else if(tag_family == "25h7"){
-    tag_codes = &AprilTags::tagCodes25h7;
+  else if(tag_family_name == "25h7"){
+    tag_family = tag25h7_create();
   }
-  else if(tag_family == "25h9"){
-    tag_codes = &AprilTags::tagCodes25h9;
+  else if(tag_family_name == "25h9"){
+    tag_family = tag25h9_create();
   }
-  else if(tag_family == "36h9"){
-    tag_codes = &AprilTags::tagCodes36h9;
+  else if(tag_family_name == "36h10"){
+    tag_family = tag36h10_create();
   }
-  else if(tag_family == "36h11"){
-    tag_codes = &AprilTags::tagCodes36h11;
+  else if(tag_family_name == "36h11"){
+    tag_family = tag36h11_create();
   }
   else{
     ROS_WARN("Invalid tag family specified; defaulting to 36h11");
-    tag_codes = &AprilTags::tagCodes36h11;
+    tag_family = tag36h11_create();
   }
 
-  tag_detector_= boost::shared_ptr<AprilTags::TagDetector>(new AprilTags::TagDetector(*tag_codes));
+  tag_detector_= apriltag_detector_create();
+  tag_detector_->nthreads = 4;
+  // tag_detector_->refine_decode = true;
+  // tag_detector_->refine_pose = true; // very slow
+  tag_detector_->quad_decimate = 2.0;
+
+  apriltag_detector_add_family(tag_detector_, tag_family);
+
   image_sub_ = it_.subscribeCamera("image_rect", 1, &AprilTagDetector::imageCb, this);
   image_pub_ = it_.advertise("tag_detections_image", 1);
   detections_pub_ = nh.advertise<AprilTagDetectionArray>("tag_detections", 1);
@@ -79,8 +89,14 @@ void AprilTagDetector::imageCb(const sensor_msgs::ImageConstPtr& msg, const sens
   }
   cv::Mat gray;
   cv::cvtColor(cv_ptr->image, gray, CV_BGR2GRAY);
-  std::vector<AprilTags::TagDetection>	detections = tag_detector_->extractTags(gray);
-  ROS_DEBUG("%d tag detected", (int)detections.size());
+  // Make an image_u8_t header for the Mat data
+  image_u8_t im = { .width = gray.cols,
+      .height = gray.rows,
+      .stride = gray.cols,
+      .buf = gray.data
+  };
+  zarray_t *detections = apriltag_detector_detect(tag_detector_, &im);
+  ROS_DEBUG("%d tag detected", zarray_size(detections));
 
   double fx;
   double fy;
@@ -109,7 +125,18 @@ void AprilTagDetector::imageCb(const sensor_msgs::ImageConstPtr& msg, const sens
   geometry_msgs::PoseArray tag_pose_array;
   tag_pose_array.header = cv_ptr->header;
 
-  BOOST_FOREACH(AprilTags::TagDetection detection, detections){
+  for (int i = 0; i < zarray_size(detections); i++) {
+    apriltag_detection_t *det;
+    zarray_get(detections, i, &det);
+    
+    // fill in a TagDetection object to use its draw() and getRelativeTransform() methods
+    AprilTags::TagDetection detection(det->id);
+    for (int j = 0; j < 4; j++) {
+      detection.p[j] = std::make_pair(det->p[j][0], det->p[j][1]);
+    }
+    detection.homography = Eigen::Map<Eigen::Matrix3d>(det->H->data);
+    detection.cxy = std::make_pair(det->c[0], det->c[1]);
+
     std::map<int, AprilTagDescription>::const_iterator description_itr = descriptions_.find(detection.id);
     if(description_itr == descriptions_.end()){
       ROS_WARN_THROTTLE(10.0, "Found tag: %d, but no description was found for it", detection.id);

@@ -54,6 +54,7 @@ add_library(apriltag_detector
 )
 target_link_libraries(apriltag_detector
   ${catkin_LIBRARIES}
+  apriltag
 )
 add_dependencies(apriltag_detector apriltags_ros_generate_messages_cpp)
 
