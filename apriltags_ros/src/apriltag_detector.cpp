@@ -147,7 +147,7 @@ void AprilTagDetector::imageCb(const sensor_msgs::ImageConstPtr& msg, const sens
     AprilTagDescription description = description_itr->second;
     double tag_size = description.size();
 
-    detection.draw(cv_ptr->image);
+    // detection.draw(cv_ptr->image);
     Eigen::Matrix4d transform = detection.getRelativeTransform(tag_size, fx, fy, px, py);
     Eigen::Matrix3d rot = transform.block(0, 0, 3, 3);
     Eigen::Quaternion<double> rot_quaternion = Eigen::Quaternion<double>(rot);
