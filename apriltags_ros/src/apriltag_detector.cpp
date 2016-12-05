@@ -71,6 +71,7 @@ AprilTagDetector::AprilTagDetector(ros::NodeHandle& nh, ros::NodeHandle& pnh): i
 
   image_sub_ = it_.subscribeCamera("image_rect", 1, &AprilTagDetector::imageCb, this);
   image_pub_ = it_.advertise("tag_detections_image", 1);
+  bad_image_pub_ = it_.advertise("tag_detections_bad_image", 1);
   detections_pub_ = nh.advertise<AprilTagDetectionArray>("tag_detections", 1);
   pose_pub_ = nh.advertise<geometry_msgs::PoseArray>("tag_detections_pose", 1);
 }
@@ -124,7 +125,7 @@ void AprilTagDetector::imageCb(const sensor_msgs::ImageConstPtr& msg, const sens
   AprilTagDetectionArray tag_detection_array;
   geometry_msgs::PoseArray tag_pose_array;
   tag_pose_array.header = cv_ptr->header;
-
+  bool corrupt = false;
   for (int i = 0; i < zarray_size(detections); i++) {
     apriltag_detection_t *det;
     zarray_get(detections, i, &det);
@@ -140,6 +141,7 @@ void AprilTagDetector::imageCb(const sensor_msgs::ImageConstPtr& msg, const sens
     std::map<int, AprilTagDescription>::const_iterator description_itr = descriptions_.find(detection.id);
     if(description_itr == descriptions_.end()){
       ROS_WARN_THROTTLE(10.0, "Found tag: %d, but no description was found for it", detection.id);
+      corrupt = true;
       continue;
     }
     AprilTagDescription description = description_itr->second;
@@ -174,6 +176,10 @@ void AprilTagDetector::imageCb(const sensor_msgs::ImageConstPtr& msg, const sens
   detections_pub_.publish(tag_detection_array);
   pose_pub_.publish(tag_pose_array);
   image_pub_.publish(cv_ptr->toImageMsg());
+  // publish image that causes no detection
+  if (corrupt || !zarray_size(detections)) {
+    bad_image_pub_.publish(msg);
+  }
 }
 
 

@@ -37,6 +37,7 @@ class AprilTagDetector{
   image_transport::ImageTransport it_;
   image_transport::CameraSubscriber image_sub_;
   image_transport::Publisher image_pub_;
+  image_transport::Publisher bad_image_pub_;
   ros::Publisher detections_pub_;
   ros::Publisher pose_pub_;
   tf::TransformBroadcaster tf_pub_;
